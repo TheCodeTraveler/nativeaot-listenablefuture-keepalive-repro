@@ -4,7 +4,7 @@
 
 Repro for the upstream issue: _link added when filed_.
 
-Every `Xamarin.Google.Guava` (33.8.0 included) depends on `Xamarin.Google.Guava.ListenableFuture` 9999.0.0, an unlisted 2022 binding. Its `IListenableFutureInvoker` passes `this.Handle` and the argument handles to JNI with no `GC.KeepAlive`. `AndroidAddKeepAlives` does not fix it up (see [Why](#why)).
+Every `Xamarin.Google.Guava` since 31.1.0.2 (May 2022), 33.8.0 included, depends on `Xamarin.Google.Guava.ListenableFuture` 9999.0.0, an unlisted 2022 binding. Its `IListenableFutureInvoker` passes `this.Handle` and the argument handles to JNI with no `GC.KeepAlive`. `AndroidAddKeepAlives` does not fix it up (see [Why](#why)).
 
 On a runtime with a precise GC, a collection can hit two windows:
 
@@ -31,9 +31,11 @@ dotnet build src/Repro.Shipped -c Release -p:ReproRuntime=nativeaot -p:RuntimeId
 adb install -r src/Repro.Shipped/bin/Release/net11.0-android/android-x64/com.example.keepaliverepro.shipped-Signed.apk
 adb logcat -c
 adb shell am start -W -n com.example.keepaliverepro.shipped/com.example.keepaliverepro.MainActivity --es scenario deterministic --es code plain
-adb logcat -d -s KeepAliveRepro
+adb logcat -d -s KeepAliveRepro   # once the DONE line appears (about 10 s)
 ```
 
+- Delete `src/*/bin` and `obj` before switching `ReproRuntime`; a stale `obj` is reused by an incremental build.
+- `android-x64` needs an x86_64 emulator; for an arm64 device or Apple Silicon emulator use `android-arm64` and its output folder (not run in CI).
 - `ReproRuntime`: `nativeaot`, `coreclr` or `mono`. Mono builds for `net10.0-android`, because .NET 11 Android removed Mono (NETSDK1242).
 - Extras: `scenario` (`deterministic` or `stress`), `code` (`plain` or `keepalive`), `seconds` (stress only).
 - Use `Repro.RebuiltBinding` and `com.example.keepaliverepro.rebuilt` for the fixed binding.
@@ -56,7 +58,7 @@ adb logcat -d -s KeepAliveRepro
 
 Expected (correct behavior): every cell is `kept`.
 
-Actual: see the table in the job summary of the confirming run (_run link added after CI_). A green run means every asserted cell matched (the NativeAOT BUG cell reproduced, and every SAFE cell kept its future while the controls were collected); a REPORT cell only has to be valid.
+Actual: see the table in the job summary of the confirming run ([run 45002779122](https://github.com/TheCodeTraveler/nativeaot-listenablefuture-keepalive-repro/actions/runs/45002779122)). A green run means every asserted cell matched (the NativeAOT BUG cell reproduced, and every SAFE cell kept its future while the controls were collected); a REPORT cell only has to be valid.
 
 | Runtime | Binding | Code | Predicted (asserted by CI) |
 |---|---|---|---|
