@@ -29,7 +29,7 @@ static class DeterministicCheck
         for (var iteration = 1; iteration <= MeasuredIterations; iteration++)
         {
             var executor = new GarbageCollectingExecutor { CollectGarbage = true };
-            var controlReference = CreateUnreferencedPeer(iteration);
+            var controlReference = CreateUnreferencedPeer();
             var (futureReference, originalHandle, peerType) = Measure(executor, iteration, useKeepAliveWorkaround);
 
             var outcome = Classify(executor, futureReference, originalHandle, peerType);
@@ -56,10 +56,17 @@ static class DeterministicCheck
             ("kept", kept), ("collected", collected), ("replaced", replaced), ("invalid", invalid), ("controlsCollected", controlsCollected), ("verdict", verdict));
     }
 
-    // Positive control: proves the GC rounds in the executor can collect an unreferenced peer on this runtime
+    // A cached Integer never dies in Java, so the bridge would keep its peer; a fresh java.lang.StringBuilder dies with its peer.
+    // Created on a thread that has exited, so Mono's conservative stack scan cannot find a stale pointer to it.
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
-    static WeakReference<Java.Lang.Object> CreateUnreferencedPeer(int value) =>
-        new(Java.Lang.Integer.ValueOf(value));
+    static WeakReference<Java.Lang.Object> CreateUnreferencedPeer()
+    {
+        WeakReference<Java.Lang.Object>? reference = null;
+        var creator = new Thread(() => reference = new(new Java.Lang.StringBuilder()));
+        creator.Start();
+        creator.Join();
+        return reference ?? throw new InvalidOperationException("The control peer was not created.");
+    }
 
     static Outcome Classify(GarbageCollectingExecutor executor, WeakReference<IListenableFuture> futureReference, nint originalHandle, string peerType)
     {

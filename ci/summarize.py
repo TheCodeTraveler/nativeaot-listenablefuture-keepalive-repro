@@ -21,7 +21,7 @@ for cell in cells:
         out.append("ENV " + " ".join(f"{key}={value}" for key, value in env.items()))
 out.append("```\n")
 
-out.append("## Deterministic check (5 iterations per cell; Predicted is what CI asserts)\n")
+out.append("## Deterministic check (5 iterations per cell; Predicted is what CI asserts; REPORT cells are only checked for validity)\n")
 out.append("| Runtime | Binding | Code | Predicted | Observed | kept / collected / replaced | Controls collected | Match | Stress calls | NPE (Runnable) | Crash |")
 out.append("|---|---|---|---|---|---|---|---|---|---|---|")
 for cell in cells:

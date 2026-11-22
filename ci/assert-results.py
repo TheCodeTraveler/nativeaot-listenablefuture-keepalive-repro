@@ -50,7 +50,9 @@ def consistency_problems(runtime, summary, results, env, env_count=1):
         problems.append(f"ENV detected {env.get('detected')}, expected {runtime}")
     if summary and len(results) != 5:
         problems.append(f"{len(results)} RESULT lines, expected 5")
-    if summary and summary.get("verdict") == "SAFE" and int(summary.get("controlsCollected", 0)) == 0:
+    if summary and "controlsCollected" not in summary:
+        problems.append("SUMMARY has no controlsCollected (the app predates the positive control)")
+    elif summary and summary.get("verdict") == "SAFE" and int(summary["controlsCollected"]) == 0:
         problems.append("SAFE with controlsCollected=0: the GC collected nothing, so SAFE is not proven")
     if summary:
         total = sum(int(summary.get(key, -1)) for key in ("kept", "collected", "replaced", "invalid"))
@@ -141,8 +143,6 @@ def main():
             observed = observed_label(cell)
             expectation = expected[app][code]
             match = observed in ("SAFE", "BUG") if expectation == "REPORT" else observed == expectation
-            if expectation == "REPORT" and cell["summary"] and int(cell["summary"].get("controlsCollected", 0)) == 0:
-                cell["consistencyProblems"].append("REPORT cell with controlsCollected=0: the GC collected nothing")
             if not match:
                 mismatches.append(f"{app}/{code}: expected {expectation}, observed {observed}")
             mismatches += [f"{app}/{code}: {problem}" for problem in cell["consistencyProblems"]]

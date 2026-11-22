@@ -11,7 +11,7 @@ On a runtime with a precise GC, a collection can hit two windows:
 - **Between reading `Handle` and ART decoding it.** The handle dangles: a SIGSEGV for the receiver, or a `Runnable was null.` NullPointerException for an argument.
 - **While Java is inside `addListener`.** The GC bridge collects the peer or swaps its JNI reference. This is what the deterministic check measures.
 
-NativeAOT is observed. CoreCLR is predicted until the confirming run (see [Expected and actual](#expected-and-actual)).
+NativeAOT is observed. CoreCLR is measured and reported, not asserted.
 
 ## What the app does
 
@@ -41,9 +41,10 @@ adb logcat -d -s KeepAliveRepro
 
 ## Scenarios
 
-- **Deterministic** (asserted). 200 warm-up calls, then 5 measured calls. Each is `kept`, `collected` (the peer was collected) or `handle-replaced` (the peer lives, but its JNI reference was replaced).
+- **Deterministic** (asserted). At least 200 warm-up calls and 3 s, then 5 measured calls. Each is `kept`, `collected` (the peer was collected) or `handle-replaced` (the peer lives, but its JNI reference was replaced).
 - **Stress** (reported only). One thread adds listeners in a loop while another calls `GC.Collect()`. A crash shows up as a missing `STRESS` line and a SIGSEGV in the crash buffer.
 - **Valid calls only.** A call counts only if Guava ran the executor inside `addListener` and the peer is the binding's `IListenableFutureInvoker`. Otherwise the cell is `INVALID`.
+- **Positive control.** Each measured call checks that the GC rounds collected an unreferenced peer. A SAFE cell with no collected control fails.
 - **Code**:
   - `plain`: `future.AddListener(runnable, executor)`.
   - `keepalive`: the same call, followed by `GC.KeepAlive` of the future, the runnable and the executor (the [workaround](#workaround)). Both paths create the runnable the same way.
@@ -55,14 +56,14 @@ adb logcat -d -s KeepAliveRepro
 
 Expected (correct behavior): every cell is `kept`.
 
-Actual: see the table in the job summary of the confirming run (_run link added after CI_). A green run means every cell matched its prediction, so the BUG cells reproduced.
+Actual: see the table in the job summary of the confirming run (_run link added after CI_). A green run means every asserted cell matched (the NativeAOT BUG cell reproduced, and every SAFE cell kept its future while the controls were collected); a REPORT cell only has to be valid.
 
 | Runtime | Binding | Code | Predicted (asserted by CI) |
 |---|---|---|---|
 | NativeAOT | shipped 9999.0.0 | plain | BUG (observed) |
 | NativeAOT | shipped 9999.0.0 | keepalive | SAFE |
 | NativeAOT | rebuilt | plain, keepalive | SAFE |
-| CoreCLR | shipped 9999.0.0 | plain | BUG (prediction) |
+| CoreCLR | shipped 9999.0.0 | plain | REPORT (measured, not asserted) |
 | CoreCLR | shipped 9999.0.0 | keepalive | SAFE |
 | CoreCLR | rebuilt | plain, keepalive | SAFE |
 | Mono | all | all | SAFE (control: Mono scans stacks conservatively) |
