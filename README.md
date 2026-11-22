@@ -2,7 +2,7 @@
 
 [![Repro](https://github.com/TheCodeTraveler/nativeaot-listenablefuture-keepalive-repro/actions/workflows/repro.yml/badge.svg)](https://github.com/TheCodeTraveler/nativeaot-listenablefuture-keepalive-repro/actions/workflows/repro.yml)
 
-Repro for [dotnet/android-libraries#1585](https://github.com/dotnet/android-libraries/issues/1585).
+Repro for [dotnet/android-libraries#1585](https://github.com/dotnet/android-libraries/issues/1585) (the binding) and [dotnet/android#13710](https://github.com/dotnet/android/issues/13710) (`AndroidAddKeepAlives`).
 
 Every `Xamarin.Google.Guava` since 31.1.0.2 (May 2022), 33.8.0 included, depends on `Xamarin.Google.Guava.ListenableFuture` 9999.0.0, an unlisted 2022 binding. Its `IListenableFutureInvoker` passes `this.Handle` and the argument handles to JNI with no `GC.KeepAlive`. `AndroidAddKeepAlives` does not fix it up (see [Why](#why)).
 
