@@ -7,10 +7,12 @@ on:
         inputs:
             api-level:
                 description: Android API level of the emulator
-                default: '36'
+                type: number
+                default: 36
             stress-seconds:
                 description: Seconds per stress run
-                default: '45'
+                type: number
+                default: 45
 
 permissions:
     contents: read
@@ -85,12 +87,23 @@ jobs:
             -   name: Restore .NET tools
                 run: dotnet tool restore
 
+            -   name: Record the environment
+                env:
+                    WORKLOAD_VERSION: ${{ steps.dotnet-root.outputs.workload-version }}
+                run: |
+                    mkdir -p "artifacts/${{ matrix.runtime }}"
+                    {
+                        echo "dotnet: $(dotnet --version)"
+                        echo "workload set: ${WORKLOAD_VERSION}"
+                        echo "emulator API level: ${API_LEVEL}"
+                        echo "--- dotnet workload list"
+                        dotnet workload list
+                        echo "--- java -version"
+                        java -version 2>&1
+                    } | tee "artifacts/${{ matrix.runtime }}/environment.txt"
+
             -   name: Build both apps and inspect the binding
                 run: bash ci/build.sh ${{ matrix.runtime }}
-
-            -   name: Decompile the invokers
-                if: ${{ matrix.runtime == 'nativeaot' }}
-                run: bash ci/show-binding-il.sh artifacts/binding-il
 
             -   name: Enable KVM
                 run: |
@@ -110,6 +123,8 @@ jobs:
                 run: sudo rm -rf "$ANDROID_HOME/cmdline-tools"
 
             -   name: Run the cells on an emulator
+                if: ${{ !cancelled() }}
+                timeout-minutes: 45
                 uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
                 with:
                     api-level: ${{ env.API_LEVEL }}
@@ -136,6 +151,12 @@ jobs:
                     name: results-${{ matrix.runtime }}
                     path: artifacts/${{ matrix.runtime }}
                     if-no-files-found: warn
+
+            # After the results upload, so a nuget.org glitch here cannot cost the emulator run or the results
+            -   name: Decompile the invokers
+                if: ${{ always() && matrix.runtime == 'nativeaot' }}
+                continue-on-error: true
+                run: bash ci/show-binding-il.sh artifacts/binding-il
 
             -   name: Upload the decompiled invokers
                 if: ${{ always() && matrix.runtime == 'nativeaot' }}
@@ -170,11 +191,4 @@ jobs:
             -   name: Write the summary
                 if: always()
                 run: |
-                    {
-                        echo "# Environment"
-                        echo "- SDK pinned by the repro jobs: 11.0.100 (see each job's dotnet --info)"
-                        echo "- Emulator API level: ${API_LEVEL}, google_apis x86_64"
-                        echo "- Packages: Xamarin.Google.Guava 33.8.0, Xamarin.Google.Guava.ListenableFuture 9999.0.0 (shipped)"
-                        echo
-                        python3 -I ci/summarize.py results binding-il
-                    } >> "$GITHUB_STEP_SUMMARY"
+                    python3 -I ci/summarize.py results binding-il >> "$GITHUB_STEP_SUMMARY"

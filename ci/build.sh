@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Builds both apps for one runtime, proves what each one compiled, and checks that the APK holds the runtime it should.
 set -uo pipefail
 
 runtime="${1:?usage: build.sh <nativeaot|coreclr|mono> [artifacts-dir]}"

@@ -14,6 +14,10 @@
   <Target Name="DownloadListenableFutureJar" BeforeTargets="BeforeBuild;_ResolveLibraryProjectImports;ResolveReferences" Condition="!Exists('$(ListenableFutureJar)')">
     <MakeDir Directories="$(MSBuildProjectDirectory)/obj/jars" />
     <DownloadFile SourceUrl="https://repo1.maven.org/maven2/com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar" DestinationFolder="$(MSBuildProjectDirectory)/obj/jars" DestinationFileName="listenablefuture-1.0.jar" />
+  </Target>
+
+  <!-- Runs even when the jar already exists, so a stale or tampered file never gets bound -->
+  <Target Name="VerifyListenableFutureJar" AfterTargets="DownloadListenableFutureJar" BeforeTargets="BeforeBuild;_ResolveLibraryProjectImports;ResolveReferences" DependsOnTargets="DownloadListenableFutureJar">
     <GetFileHash Files="$(ListenableFutureJar)" Algorithm="SHA256">
       <Output TaskParameter="Items" ItemName="ListenableFutureJarHash" />
     </GetFileHash>

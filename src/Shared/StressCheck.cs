@@ -9,7 +9,7 @@ static class StressCheck
     {
         var code = useKeepAliveWorkaround ? "keepalive" : "plain";
         var deadline = DateTime.UtcNow.AddSeconds(seconds);
-        long calls = 0, npeRunnable = 0, npeExecutor = 0, otherErrors = 0;
+        long calls = 0, npeRunnable = 0, otherErrors = 0;
 
         var collector = new Thread(() =>
         {
@@ -28,13 +28,14 @@ static class StressCheck
             try
             {
                 var future = GuavaFutures.ImmediateFuture(Java.Lang.Integer.ValueOf((int)calls));
+                var runnable = new Java.Lang.Runnable(static () => { });
                 if (useKeepAliveWorkaround)
                 {
-                    future.AddListenerOnExecutor(executor, static () => { });
+                    future.AddListenerKeepingArgumentsAlive(runnable, executor);
                 }
                 else
                 {
-                    future.AddListener(new Java.Lang.Runnable(static () => { }), executor);
+                    future.AddListener(runnable, executor);
                 }
             }
             catch (Java.Lang.NullPointerException e)
@@ -42,10 +43,6 @@ static class StressCheck
                 if (e.Message?.Contains("Runnable", StringComparison.Ordinal) is true)
                 {
                     npeRunnable++;
-                }
-                else if (e.Message?.Contains("Executor", StringComparison.Ordinal) is true)
-                {
-                    npeExecutor++;
                 }
                 else
                 {
@@ -61,13 +58,13 @@ static class StressCheck
 
             if (DateTime.UtcNow >= nextProgress)
             {
-                Log.Line("STRESS_PROGRESS", ("app", app), ("code", code), ("calls", calls), ("npeRunnable", npeRunnable), ("npeExecutor", npeExecutor), ("otherErrors", otherErrors));
+                Log.Line("STRESS_PROGRESS", ("app", app), ("code", code), ("calls", calls), ("npeRunnable", npeRunnable), ("otherErrors", otherErrors));
                 nextProgress = DateTime.UtcNow.AddSeconds(10);
             }
         }
 
         collector.Join();
         Log.Line("STRESS", ("app", app), ("runtime", runtime), ("code", code), ("seconds", seconds), ("calls", calls),
-            ("npeRunnable", npeRunnable), ("npeExecutor", npeExecutor), ("otherErrors", otherErrors));
+            ("npeRunnable", npeRunnable), ("otherErrors", otherErrors));
     }
 }

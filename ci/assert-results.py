@@ -1,4 +1,3 @@
-"""Compares each cell's observed verdict with ci/expected.json and writes results.json plus a markdown table."""
 import argparse
 import json
 import os
@@ -20,18 +19,49 @@ def lines_starting_with(path, key):
         return [fields(line) for line in file if re.search(rf"\s{key}\s", line)]
 
 
-def read_cell(results_dir, app, code):
+def native_failures(folder):
+    signals = []
+    crash_path = f"{folder}/crash.txt"
+    if os.path.exists(crash_path):
+        signals += re.findall(r"Fatal signal \d+ \((SIG\w+)\)", open(crash_path, errors="replace").read())
+    logcat_path = f"{folder}/logcat.txt"
+    if os.path.exists(logcat_path) and "JNI DETECTED ERROR" in open(logcat_path, errors="replace").read():
+        signals.append("JNI DETECTED ERROR")
+    return list(dict.fromkeys(signals))
+
+
+def consistency_problems(runtime, summary, results, env):
+    problems = []
+    if not env:
+        problems.append("no ENV line")
+    elif env.get("detected") != runtime:
+        problems.append(f"ENV detected {env.get('detected')}, expected {runtime}")
+    if len(results) != 5:
+        problems.append(f"{len(results)} RESULT lines, expected 5")
+    if summary:
+        total = sum(int(summary.get(key, -1)) for key in ("kept", "collected", "replaced", "invalid"))
+        if total != 5:
+            problems.append(f"kept+collected+replaced+invalid is {total}, expected 5")
+    return problems
+
+
+def read_cell(results_dir, runtime, app, code):
     deterministic = f"{results_dir}/runs/{app}-deterministic-{code}"
     summaries = lines_starting_with(f"{deterministic}/repro.txt", "SUMMARY")
+    results = lines_starting_with(f"{deterministic}/repro.txt", "RESULT")
+    envs = lines_starting_with(f"{deterministic}/repro.txt", "ENV")
     stress_folder = f"{results_dir}/runs/{app}-stress-{code}"
     stress = lines_starting_with(f"{stress_folder}/repro.txt", "STRESS")
-    crash_path = f"{stress_folder}/crash.txt"
-    crashed = os.path.exists(crash_path) and "SIGSEGV" in open(crash_path, errors="replace").read()
+    summary = summaries[-1] if summaries else None
+    env = envs[0] if envs else None
     return {
-        "summary": summaries[-1] if summaries else None,
-        "results": lines_starting_with(f"{deterministic}/repro.txt", "RESULT"),
+        "summary": summary,
+        "results": results,
+        "env": env,
         "stress": stress[-1] if stress else None,
-        "stressCrashed": crashed,
+        "deterministicNativeFailures": native_failures(deterministic),
+        "stressNativeFailures": native_failures(stress_folder),
+        "consistencyProblems": consistency_problems(runtime, summary, results, env) if summary else [],
     }
 
 
@@ -47,7 +77,7 @@ def binding_failures(results_dir, runtime):
         for copy in inspect["copies"]:
             if app == "Shipped" and copy["keepAliveCallsInAddListener"] != 0:
                 failures.append(f"Shipped copy {copy['path']} has keep-alives")
-            if app == "RebuiltBinding" and "Rebuilt" in copy["path"] + copy["sha256"] and copy["keepAliveCallsInAddListener"] < 2:
+            if app == "RebuiltBinding" and "Rebuilt" in copy["path"] and copy["keepAliveCallsInAddListener"] < 2:
                 failures.append(f"Rebuilt copy {copy['path']} lacks keep-alives")
         if app == "Shipped" and inspect["listenableFutureResolved"] != "9999.0.0":
             failures.append(f"Shipped resolved {inspect['listenableFutureResolved']}")
@@ -67,11 +97,13 @@ def main():
     cells, mismatches = [], []
     for app in APPS:
         for code in CODES:
-            cell = read_cell(arguments.results, app, code)
+            cell = read_cell(arguments.results, arguments.runtime, app, code)
             observed = cell["summary"]["verdict"] if cell["summary"] else "NO SUMMARY"
             match = observed == expected[app][code]
             if not match:
                 mismatches.append(f"{app}/{code}: expected {expected[app][code]}, observed {observed}")
+            mismatches += [f"{app}/{code}: {problem}" for problem in cell["consistencyProblems"]]
+            mismatches += [f"{app}/{code}: deterministic run hit {failure}" for failure in cell["deterministicNativeFailures"]]
             cells.append({"runtime": arguments.runtime, "app": app, "code": code, "expected": expected[app][code], "observed": observed, "match": match, **cell})
 
     failures = binding_failures(arguments.results, arguments.runtime)
@@ -79,12 +111,12 @@ def main():
     with open(f"{arguments.results}/results.json", "w") as file:
         json.dump({"runtime": arguments.runtime, "cells": cells, "mismatches": mismatches, "bindingFailures": failures}, file, indent=2)
 
-    rows = ["| Runtime | App | Code | Expected | Observed | kept / collected / replaced | Match | Stress calls | NPE (Runnable) | Crash |", "|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| Runtime | App | Code | Predicted | Observed | kept / collected / replaced | Match | Stress calls | NPE (Runnable) | Crash |", "|---|---|---|---|---|---|---|---|---|---|"]
     for cell in cells:
         summary, stress = cell["summary"] or {}, cell["stress"] or {}
         rows.append(f"| {cell['runtime']} | {cell['app']} | {cell['code']} | {cell['expected']} | {cell['observed']} | "
                     f"{summary.get('kept', '?')} / {summary.get('collected', '?')} / {summary.get('replaced', '?')} | {'yes' if cell['match'] else 'NO'} | "
-                    f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {'SIGSEGV' if cell['stressCrashed'] else 'no'} |")
+                    f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {', '.join(cell['stressNativeFailures'] + cell['deterministicNativeFailures']) or 'no'} |")
     table = "\n".join(rows)
     print(table)
 

@@ -51,11 +51,13 @@ public class MainActivity : Activity
     static void LogEnvironment(string app, string runtime)
     {
         var assembly = typeof(IListenableFuture).Assembly;
+        var guavaAssembly = typeof(Google.Common.Collect.ImmutableList).Assembly;
         var detected = !RuntimeFeature.IsDynamicCodeSupported ? "nativeaot" : Type.GetType("Mono.Runtime") is not null ? "mono" : "coreclr";
 
         Log.Line("ENV", ("app", app), ("runtime", runtime), ("detected", detected), ("framework", System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription),
             ("api", (int)Build.VERSION.SdkInt), ("abi", Build.SupportedAbis?.FirstOrDefault() ?? ""),
             ("listenableFutureAssembly", assembly.GetName().Name), ("listenableFutureVersion", assembly.GetName().Version),
+            ("guavaAssembly", guavaAssembly.GetName().Name), ("guavaVersion", guavaAssembly.GetName().Version),
             ("listenableFutureInformationalVersion", assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion));
     }
 }

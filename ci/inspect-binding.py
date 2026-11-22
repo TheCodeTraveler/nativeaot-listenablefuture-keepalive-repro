@@ -1,4 +1,3 @@
-"""Records which Xamarin.Google.Guava.ListenableFuture.dll an app resolved, compiled and shipped, and whether its AddListener keeps anything alive."""
 import argparse
 import glob
 import hashlib
@@ -10,7 +9,7 @@ import sys
 
 TYPE_NAME = "Google.Common.Util.Concurrent.IListenableFutureInvoker"
 DLL_NAME = "Xamarin.Google.Guava.ListenableFuture.dll"
-KEEP_ALIVE_STEP_TARGETS = ["_PostTrimmingPipeline", "PostTrimmingPipeline", "_LinkAssembliesNoShrink"]
+ILLINK_ADD_KEEP_ALIVES_STEP = re.compile(r"--custom-step \"\+CleanStep:MonoDroid\.Tuner\.AddKeepAlivesStep")
 
 
 def sha256(path):
@@ -34,13 +33,18 @@ def add_listener_il(dll):
     raise RuntimeError(f"No AddListener method found in {dll}")
 
 
+def target_platform(path):
+    match = re.search(r"Android\d+\.\d+", open(path, "rb").read().decode("latin-1"))
+    return match.group(0) if match else None
+
+
 def describe_copy(path, nupkg_hash):
     il = add_listener_il(path)
     return {
         "path": path,
         "sha256": sha256(path),
         "identicalToNupkg": sha256(path) == nupkg_hash if nupkg_hash else None,
-        "targetPlatform": "".join(re.findall(r"Android\d+\.\d+", open(path, "rb").read().decode("latin-1")))[:20] or None,
+        "targetPlatform": target_platform(path),
         "keepAliveCallsInAddListener": il.count("System.GC::KeepAlive"),
         "passesThisToInvokeAbstractVoidMethod": "InvokeAbstractVoidMethod" in il,
         "addListenerIl": il,
@@ -75,22 +79,20 @@ def compiler_inputs(app_dir):
 def keep_alive_step_report(diag_log):
     if not diag_log or not os.path.exists(diag_log):
         return {"available": False}
-    counts = {name: 0 for name in KEEP_ALIVE_STEP_TARGETS}
-    skipped = {name: 0 for name in KEEP_ALIVE_STEP_TARGETS}
+    pipeline_target_done = add_keep_alives_task_parameter = illink_step = False
     add_keep_alives = None
     with open(diag_log, errors="replace") as file:
         for line in file:
-            for name in KEEP_ALIVE_STEP_TARGETS:
-                if name in line:
-                    counts[name] += 1
-                    if "skipped" in line.lower():
-                        skipped[name] += 1
+            pipeline_target_done = pipeline_target_done or 'Done building target "_PostTrimmingPipeline"' in line
+            add_keep_alives_task_parameter = add_keep_alives_task_parameter or "Task Parameter:AddKeepAlives=True" in line
+            illink_step = illink_step or ILLINK_ADD_KEEP_ALIVES_STEP.search(line) is not None
             if add_keep_alives is None:
                 match = re.search(r"AndroidAddKeepAlives\s*=\s*(\w+)", line)
                 if match:
                     add_keep_alives = match.group(1)
-    return {"available": True, "mentions": counts, "skippedMentions": skipped, "androidAddKeepAlives": add_keep_alives,
-            "ran": any(counts[name] > skipped[name] for name in counts)}
+    post_trimming_pipeline = pipeline_target_done and add_keep_alives_task_parameter
+    return {"available": True, "androidAddKeepAlives": add_keep_alives, "postTrimmingPipeline": post_trimming_pipeline,
+            "illinkAddKeepAlivesStep": illink_step, "ran": post_trimming_pipeline or illink_step}
 
 
 def main():

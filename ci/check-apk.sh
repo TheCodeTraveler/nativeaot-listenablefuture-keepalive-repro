@@ -18,9 +18,11 @@ case "$runtime" in
         ;;
     coreclr)
         has "libcoreclr.so" || fail "missing CoreCLR"
+        has "libmonosgen-2.0.so" && fail "contains Mono"
         ;;
     mono)
         has "libmonosgen-2.0.so" || fail "missing Mono"
+        has "libcoreclr.so" && fail "contains CoreCLR"
         ;;
 esac
 echo "APK check passed: $app $runtime ($apk)"

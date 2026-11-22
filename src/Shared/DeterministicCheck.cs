@@ -74,8 +74,10 @@ static class DeterministicCheck
         var originalHandle = future.Handle;
         var peerType = future.GetType().FullName ?? "";
 
+        var runnable = new Java.Lang.Runnable(static () => { });
+
         executor.IsAddingListener = true;
-        future.AddListener(new Java.Lang.Runnable(static () => { }), executor);
+        future.AddListener(runnable, executor);
         executor.IsAddingListener = false;
 
         return (futureReference, originalHandle, peerType);
@@ -89,8 +91,10 @@ static class DeterministicCheck
         var originalHandle = future.Handle;
         var peerType = future.GetType().FullName ?? "";
 
+        var runnable = new Java.Lang.Runnable(static () => { });
+
         executor.IsAddingListener = true;
-        future.AddListenerOnExecutor(executor, static () => { });
+        future.AddListenerKeepingArgumentsAlive(runnable, executor);
         executor.IsAddingListener = false;
 
         return (futureReference, originalHandle, peerType);

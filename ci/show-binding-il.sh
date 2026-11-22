@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Decompiles IListenableFutureInvoker.AddListener from the shipped 9999.0.0 binding, the 1.0.0.32 binding and the rebuilt one,
-# plus the same-package net8 versus net10 interface invoker that shows the older generator emitted no keep-alives.
 set -uo pipefail
 
 output="${1:-artifacts/binding-il}"

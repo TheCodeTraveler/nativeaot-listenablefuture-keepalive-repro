@@ -4,8 +4,19 @@ set -u -o pipefail
 
 runtime="${1:?usage: run-cells.sh <runtime> <stress-seconds>}"
 stress_seconds="${2:-45}"
+[[ $stress_seconds =~ ^[0-9]+$ ]] || { echo "stress-seconds must be a whole number, got '$stress_seconds'."; exit 2; }
 artifacts="artifacts/$runtime/runs"
 mkdir -p "$artifacts"
+
+# A stress run's bridge-round Java GC lines overflow the 256 KB default and push out ENV and STRESS_PROGRESS
+adb logcat -G 16M
+
+install_apk() {
+    local apk="$1" output="$2"
+    timeout 300 adb install -r "$apk" > "$output" 2>&1 && return 0
+    sleep 10
+    timeout 300 adb install -r "$apk" > "$output" 2>&1
+}
 
 wait_for_done() {
     local package="$1" timeout_seconds="$2" waited=0
@@ -31,7 +42,7 @@ run_cell() {
 
     adb logcat -c
     adb logcat -b crash -c
-    adb shell am start -W -n "$package/com.example.keepaliverepro.MainActivity" \
+    timeout 60 adb shell am start -W -n "$package/com.example.keepaliverepro.MainActivity" \
         --es scenario "$scenario" --es code "$code" --ei seconds "$stress_seconds" > "$folder/am-start.txt" 2>&1
 
     wait_for_done "$package" "$timeout_seconds" > "$folder/wait.txt" 2>&1
@@ -46,7 +57,7 @@ run_cell() {
 for app in Shipped RebuiltBinding; do
     package="com.example.keepaliverepro.$(echo "$app" | sed 's/RebuiltBinding/rebuilt/;s/Shipped/shipped/')"
     apk=$(ls src/Repro."$app"/bin/Release/*/android-x64/*-Signed.apk | head -1)
-    adb install -r "$apk" > "$artifacts/install-$app.txt" 2>&1 || { echo "Install of $app failed"; cat "$artifacts/install-$app.txt"; continue; }
+    install_apk "$apk" "$artifacts/install-$app.txt" || { echo "Install of $app failed"; cat "$artifacts/install-$app.txt"; continue; }
 
     for code in plain keepalive; do
         run_cell "$app" "$package" deterministic "$code" 180
