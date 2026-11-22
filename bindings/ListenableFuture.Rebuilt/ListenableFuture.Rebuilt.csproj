@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Xamarin.Google.Guava.ListenableFuture</AssemblyName>
+    <RootNamespace>Google.Common.Util.Concurrent</RootNamespace>
+    <ListenableFutureJar>$(MSBuildProjectDirectory)/obj/jars/listenablefuture-1.0.jar</ListenableFutureJar>
+    <ListenableFutureJarSha256>E4AD7607E5C0477C6F890EF26A49CB8D1BB4DFFB650BAB4502AFEE64644E3069</ListenableFutureJarSha256>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same replacement android-libraries uses, so the bound namespace matches the shipped binding -->
+    <AndroidNamespaceReplacement Include="com.google." Replacement="Google" />
+  </ItemGroup>
+
+  <Target Name="DownloadListenableFutureJar" BeforeTargets="BeforeBuild;_ResolveLibraryProjectImports;ResolveReferences" Condition="!Exists('$(ListenableFutureJar)')">
+    <MakeDir Directories="$(MSBuildProjectDirectory)/obj/jars" />
+    <DownloadFile SourceUrl="https://repo1.maven.org/maven2/com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar" DestinationFolder="$(MSBuildProjectDirectory)/obj/jars" DestinationFileName="listenablefuture-1.0.jar" />
+    <GetFileHash Files="$(ListenableFutureJar)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="ListenableFutureJarHash" />
+    </GetFileHash>
+    <Error Condition="'%(ListenableFutureJarHash.FileHash)' != '$(ListenableFutureJarSha256)'" Text="listenablefuture-1.0.jar has SHA256 %(ListenableFutureJarHash.FileHash), expected $(ListenableFutureJarSha256)." />
+  </Target>
+
+  <ItemGroup>
+    <!-- Bound but not embedded: guava.jar, which the app already has, contains these classes -->
+    <InputJar Include="$(ListenableFutureJar)" />
+  </ItemGroup>
+</Project>

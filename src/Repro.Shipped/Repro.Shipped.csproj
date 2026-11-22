@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ApplicationId>com.example.keepaliverepro.shipped</ApplicationId>
+    <AssemblyName>Repro.Shipped</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Xamarin.Google.Guava" Version="33.8.0" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,14 @@
+{
+  "nativeaot": {
+    "Shipped": {"plain": "BUG", "keepalive": "SAFE"},
+    "RebuiltBinding": {"plain": "SAFE", "keepalive": "SAFE"}
+  },
+  "coreclr": {
+    "Shipped": {"plain": "BUG", "keepalive": "SAFE"},
+    "RebuiltBinding": {"plain": "SAFE", "keepalive": "SAFE"}
+  },
+  "mono": {
+    "Shipped": {"plain": "SAFE", "keepalive": "SAFE"},
+    "RebuiltBinding": {"plain": "SAFE", "keepalive": "SAFE"}
+  }
+}

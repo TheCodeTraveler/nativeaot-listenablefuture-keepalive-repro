@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net11.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <!-- .NET 11 Android removed Mono (NETSDK1242), so the Mono control cell is the only one built for net10.0 -->
+  <PropertyGroup Condition="'$(ReproRuntime)' == 'mono'">
+    <TargetFramework>net10.0-android</TargetFramework>
+  </PropertyGroup>
+</Project>

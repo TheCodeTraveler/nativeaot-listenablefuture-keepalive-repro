@@ -1,0 +1,31 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Release builds default to an aab, which adb cannot install -->
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <ReproRuntime Condition="'$(ReproRuntime)' == ''">coreclr</ReproRuntime>
+  </PropertyGroup>
+
+  <!-- Only the runtime is chosen here: trimming, ReadyToRun, R8 and AndroidAddKeepAlives keep the defaults apps ship with -->
+  <PropertyGroup Condition="'$(ReproRuntime)' == 'nativeaot'">
+    <PublishAot>true</PublishAot>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ReproRuntime)' == 'coreclr'">
+    <UseMonoRuntime>false</UseMonoRuntime>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ReproRuntime)' == 'mono'">
+    <UseMonoRuntime>true</UseMonoRuntime>
+  </PropertyGroup>
+
+  <Target Name="RejectUnknownReproRuntime" BeforeTargets="PrepareForBuild" Condition="'$(ReproRuntime)' != 'nativeaot' and '$(ReproRuntime)' != 'coreclr' and '$(ReproRuntime)' != 'mono'">
+    <Error Text="ReproRuntime must be nativeaot, coreclr or mono, not '$(ReproRuntime)'." />
+  </Target>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="ReproRuntime" Value="$(ReproRuntime)" />
+    <Compile Include="$(MSBuildThisFileDirectory)Shared/**/*.cs" />
+    <ProguardConfiguration Include="$(MSBuildThisFileDirectory)../proguard.cfg" />
+  </ItemGroup>
+</Project>

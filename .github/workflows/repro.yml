@@ -1,0 +1,180 @@
+name: Repro
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+        inputs:
+            api-level:
+                description: Android API level of the emulator
+                default: '36'
+            stress-seconds:
+                description: Seconds per stress run
+                default: '45'
+
+permissions:
+    contents: read
+
+concurrency:
+    group: repro-${{ github.ref }}
+    cancel-in-progress: true
+
+env:
+    DOTNET_NOLOGO: 'true'
+    DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    API_LEVEL: ${{ inputs.api-level || '36' }}
+    STRESS_SECONDS: ${{ inputs.stress-seconds || '45' }}
+
+jobs:
+    repro:
+        name: ${{ matrix.runtime }}
+        runs-on: ubuntu-24.04
+        timeout-minutes: 75
+        strategy:
+            fail-fast: false
+            matrix:
+                runtime: [nativeaot, coreclr, mono]
+        steps:
+            -   name: Checkout code
+                uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            -   name: Install .NET SDK
+                uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+                with:
+                    dotnet-version: '11.0.100'
+                    dotnet-quality: 'ga'
+
+            -   uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+                with:
+                    distribution: 'microsoft'
+                    java-version: '21'
+
+            -   name: Locate the .NET install
+                id: dotnet-root
+                shell: bash
+                run: |
+                    p=$(dirname "$(readlink -f "$(command -v dotnet)")"); echo "path=$p" | tee -a "$GITHUB_OUTPUT"
+                    echo "sdk=$(dotnet --version)" | tee -a "$GITHUB_OUTPUT"
+                    wv=$(dotnet workload search version --take 1); test -n "$wv" || { echo '::error::No workload set found for this SDK band.'; exit 1; }; echo "workload-version=$wv" | tee -a "$GITHUB_OUTPUT"
+
+            # The key names the SDK that runs and the newest workload set of its band, so a new workload release starts a new cache
+            -   name: Cache .NET workload packs
+                uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+                with:
+                    path: |
+                        ${{ steps.dotnet-root.outputs.path }}/packs
+                        ${{ steps.dotnet-root.outputs.path }}/sdk-manifests
+                        ${{ steps.dotnet-root.outputs.path }}/metadata/workloads
+                        ${{ steps.dotnet-root.outputs.path }}/template-packs
+                    key: dotnet-workload-android-${{ runner.os }}-${{ runner.arch }}-${{ steps.dotnet-root.outputs.sdk }}-${{ steps.dotnet-root.outputs.workload-version }}
+
+            -   name: Cache NuGet packages
+                uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+                with:
+                    path: ~/.nuget/packages
+                    key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.csproj', '**/*.props', 'nuget.config', 'global.json', '.config/dotnet-tools.json') }}
+
+            -   name: Install .NET Android workload
+                run: dotnet workload install android --version ${{ steps.dotnet-root.outputs.workload-version }}
+
+            -   name: Display dotnet info
+                run: |
+                    dotnet --info
+                    dotnet workload list
+
+            -   name: Restore .NET tools
+                run: dotnet tool restore
+
+            -   name: Build both apps and inspect the binding
+                run: bash ci/build.sh ${{ matrix.runtime }}
+
+            -   name: Decompile the invokers
+                if: ${{ matrix.runtime == 'nativeaot' }}
+                run: bash ci/show-binding-il.sh artifacts/binding-il
+
+            -   name: Enable KVM
+                run: |
+                    echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                    sudo udevadm control --reload-rules
+                    # --settle returns once udevd has applied the rule; without it, trigger only queues the event and the check below can run first.
+                    sudo udevadm trigger --name-match=kvm --settle
+                    # Without a usable /dev/kvm the emulator action only warns and runs the x86_64 emulator with -accel off, far too slowly.
+                    if ! { test -r /dev/kvm && test -w /dev/kvm; }; then
+                        echo '::error::/dev/kvm is not usable, so the Android emulator cannot use hardware acceleration.'
+                        exit 1
+                    fi
+
+            # A fractional API level needs the action's own cmdline-tools, not the runner image's old ones
+            -   name: Remove the runner image's old cmdline-tools
+                if: ${{ contains(env.API_LEVEL, '.') }}
+                run: sudo rm -rf "$ANDROID_HOME/cmdline-tools"
+
+            -   name: Run the cells on an emulator
+                uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+                with:
+                    api-level: ${{ env.API_LEVEL }}
+                    target: google_apis
+                    arch: x86_64
+                    profile: pixel_7_pro
+                    cores: 4
+                    ram-size: 4096M
+                    disk-size: 6000M
+                    force-avd-creation: false
+                    emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+                    disable-animations: true
+                    # One line, because the action runs each script line in its own shell
+                    script: bash ci/run-cells.sh ${{ matrix.runtime }} ${{ env.STRESS_SECONDS }}
+
+            -   name: Compare with the expected verdicts
+                if: always()
+                run: python3 -I ci/assert-results.py --runtime ${{ matrix.runtime }} --expected ci/expected.json --results artifacts/${{ matrix.runtime }}
+
+            -   name: Upload results
+                if: always()
+                uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+                with:
+                    name: results-${{ matrix.runtime }}
+                    path: artifacts/${{ matrix.runtime }}
+                    if-no-files-found: warn
+
+            -   name: Upload the decompiled invokers
+                if: ${{ always() && matrix.runtime == 'nativeaot' }}
+                uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+                with:
+                    name: binding-il
+                    path: artifacts/binding-il
+                    if-no-files-found: warn
+
+    summary:
+        name: Summary
+        needs: repro
+        if: always()
+        runs-on: ubuntu-24.04
+        steps:
+            -   name: Checkout code
+                uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            -   name: Download results
+                uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+                with:
+                    pattern: results-*
+                    path: results
+
+            -   name: Download the decompiled invokers
+                continue-on-error: true
+                uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+                with:
+                    name: binding-il
+                    path: binding-il
+
+            -   name: Write the summary
+                if: always()
+                run: |
+                    {
+                        echo "# Environment"
+                        echo "- SDK pinned by the repro jobs: 11.0.100 (see each job's dotnet --info)"
+                        echo "- Emulator API level: ${API_LEVEL}, google_apis x86_64"
+                        echo "- Packages: Xamarin.Google.Guava 33.8.0, Xamarin.Google.Guava.ListenableFuture 9999.0.0 (shipped)"
+                        echo
+                        python3 -I ci/summarize.py results binding-il
+                    } >> "$GITHUB_STEP_SUMMARY"

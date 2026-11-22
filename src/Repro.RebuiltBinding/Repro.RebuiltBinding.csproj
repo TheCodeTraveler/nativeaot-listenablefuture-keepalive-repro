@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ApplicationId>com.example.keepaliverepro.rebuilt</ApplicationId>
+    <AssemblyName>Repro.RebuiltBinding</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Xamarin.Google.Guava" Version="33.8.0" />
+    <!-- ExcludeAssets removes the 2022 DLL without a package downgrade; the rebuilt binding replaces it -->
+    <PackageReference Include="Xamarin.Google.Guava.ListenableFuture" Version="9999.0.0" ExcludeAssets="all" />
+    <ProjectReference Include="../../bindings/ListenableFuture.Rebuilt/ListenableFuture.Rebuilt.csproj" />
+  </ItemGroup>
+</Project>
