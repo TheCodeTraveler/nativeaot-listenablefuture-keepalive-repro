@@ -22,12 +22,12 @@ for cell in cells:
 out.append("```\n")
 
 out.append("## Deterministic check (5 iterations per cell; Predicted is what CI asserts)\n")
-out.append("| Runtime | Binding | Code | Predicted | Observed | kept / collected / replaced | Match | Stress calls | NPE (Runnable) | Crash |")
-out.append("|---|---|---|---|---|---|---|---|---|---|")
+out.append("| Runtime | Binding | Code | Predicted | Observed | kept / collected / replaced | Controls collected | Match | Stress calls | NPE (Runnable) | Crash |")
+out.append("|---|---|---|---|---|---|---|---|---|---|---|")
 for cell in cells:
     summary, stress = cell.get("summary") or {}, cell.get("stress") or {}
     out.append(f"| {cell['runtime']} | {cell['app']} | {cell['code']} | {cell['expected']} | {cell['observed']} | "
-               f"{summary.get('kept', '?')} / {summary.get('collected', '?')} / {summary.get('replaced', '?')} | {'yes' if cell['match'] else 'NO'} | "
+               f"{summary.get('kept', '?')} / {summary.get('collected', '?')} / {summary.get('replaced', '?')} | {summary.get('controlsCollected', '?')} | {'yes' if cell['match'] else 'NO'} | "
                f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {', '.join(cell.get('stressNativeFailures', []) + cell.get('deterministicNativeFailures', []) + ([cell['crashMessage']] if cell.get('crashMessage') else []) + cell.get('errors', [])) or 'no'} |")
 
 out.append("\n## Binding proof\n")

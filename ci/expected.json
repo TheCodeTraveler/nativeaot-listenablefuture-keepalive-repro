@@ -4,7 +4,7 @@
     "RebuiltBinding": {"plain": "SAFE", "keepalive": "SAFE"}
   },
   "coreclr": {
-    "Shipped": {"plain": "BUG", "keepalive": "SAFE"},
+    "Shipped": {"plain": "REPORT", "keepalive": "SAFE"},
     "RebuiltBinding": {"plain": "SAFE", "keepalive": "SAFE"}
   },
   "mono": {

@@ -9,9 +9,17 @@ namespace Repro;
 [Activity(Name = "com.example.keepaliverepro.MainActivity", MainLauncher = true, Exported = true)]
 public class MainActivity : Activity
 {
+    static int scenarioStarted;
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+
+        // A config change right after emulator boot relaunches the activity, and a second scenario thread would double the results
+        if (Interlocked.Exchange(ref scenarioStarted, 1) == 1)
+        {
+            return;
+        }
 
         var scenario = Intent?.GetStringExtra("scenario") ?? "deterministic";
         var useKeepAliveWorkaround = Intent?.GetStringExtra("code") == "keepalive";

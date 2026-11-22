@@ -6,6 +6,8 @@ import sys
 
 APPS = ["Shipped", "RebuiltBinding"]
 CODES = ["plain", "keepalive"]
+# MainActivity logs the last segment of the package name, not the cell name
+LOG_APP_NAMES = {"Shipped": "shipped", "RebuiltBinding": "rebuilt"}
 
 
 def fields(line):
@@ -17,7 +19,7 @@ def lines_starting_with(path, key, app=None, code=None):
         return []
     with open(path, errors="replace") as file:
         parsed = [fields(line) for line in file if re.search(rf"\s{key}\s", line)]
-    parsed = [line for line in parsed if app is None or line.get("app") == app]
+    parsed = [line for line in parsed if app is None or line.get("app") == LOG_APP_NAMES[app]]
     if code is not None and key in ("RESULT", "SUMMARY"):
         parsed = [line for line in parsed if line.get("code") == code]
     return parsed
@@ -38,14 +40,18 @@ def native_failures(folder):
     return list(dict.fromkeys(signals))
 
 
-def consistency_problems(runtime, summary, results, env):
+def consistency_problems(runtime, summary, results, env, env_count=1):
     problems = []
+    if env_count > 1:
+        problems.append(f"scenario ran {env_count} times in one process")
     if not env:
         problems.append("no ENV line")
     elif env.get("detected") != runtime:
         problems.append(f"ENV detected {env.get('detected')}, expected {runtime}")
     if summary and len(results) != 5:
         problems.append(f"{len(results)} RESULT lines, expected 5")
+    if summary and summary.get("verdict") == "SAFE" and int(summary.get("controlsCollected", 0)) == 0:
+        problems.append("SAFE with controlsCollected=0: the GC collected nothing, so SAFE is not proven")
     if summary:
         total = sum(int(summary.get(key, -1)) for key in ("kept", "collected", "replaced", "invalid"))
         if total != 5:
@@ -75,7 +81,7 @@ def read_cell(results_dir, runtime, app, code):
         "crashMessage": crash_message(deterministic),
         "errors": errors,
         "timedOut": timed_out,
-        "consistencyProblems": consistency_problems(runtime, summary, results, env),
+        "consistencyProblems": consistency_problems(runtime, summary, results, env, len(envs)),
     }
 
 
@@ -133,23 +139,26 @@ def main():
         for code in CODES:
             cell = read_cell(arguments.results, arguments.runtime, app, code)
             observed = observed_label(cell)
-            match = observed == expected[app][code]
+            expectation = expected[app][code]
+            match = observed in ("SAFE", "BUG") if expectation == "REPORT" else observed == expectation
+            if expectation == "REPORT" and cell["summary"] and int(cell["summary"].get("controlsCollected", 0)) == 0:
+                cell["consistencyProblems"].append("REPORT cell with controlsCollected=0: the GC collected nothing")
             if not match:
-                mismatches.append(f"{app}/{code}: expected {expected[app][code]}, observed {observed}")
+                mismatches.append(f"{app}/{code}: expected {expectation}, observed {observed}")
             mismatches += [f"{app}/{code}: {problem}" for problem in cell["consistencyProblems"]]
             mismatches += [f"{app}/{code}: deterministic run hit {failure}" for failure in cell["deterministicNativeFailures"]]
-            cells.append({"runtime": arguments.runtime, "app": app, "code": code, "expected": expected[app][code], "observed": observed, "match": match, **cell})
+            cells.append({"runtime": arguments.runtime, "app": app, "code": code, "expected": expectation, "observed": observed, "match": match, **cell})
 
     failures = binding_failures(arguments.results, arguments.runtime)
 
     with open(arguments.output or f"{arguments.results}/results.json", "w") as file:
         json.dump({"runtime": arguments.runtime, "cells": cells, "mismatches": mismatches, "bindingFailures": failures}, file, indent=2)
 
-    rows = ["| Runtime | App | Code | Predicted | Observed | kept / collected / replaced | Match | Stress calls | NPE (Runnable) | Crash |", "|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| Runtime | App | Code | Predicted | Observed | kept / collected / replaced | Controls collected | Match | Stress calls | NPE (Runnable) | Crash |", "|---|---|---|---|---|---|---|---|---|---|---|"]
     for cell in cells:
         summary, stress = cell["summary"] or {}, cell["stress"] or {}
         rows.append(f"| {cell['runtime']} | {cell['app']} | {cell['code']} | {cell['expected']} | {cell['observed']} | "
-                    f"{summary.get('kept', '?')} / {summary.get('collected', '?')} / {summary.get('replaced', '?')} | {'yes' if cell['match'] else 'NO'} | "
+                    f"{summary.get('kept', '?')} / {summary.get('collected', '?')} / {summary.get('replaced', '?')} | {summary.get('controlsCollected', '?')} | {'yes' if cell['match'] else 'NO'} | "
                     f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {', '.join(cell['stressNativeFailures'] + cell['deterministicNativeFailures'] + ([cell['crashMessage']] if cell['crashMessage'] else []) + cell['errors']) or 'no'} |")
     table = "\n".join(rows)
     print(table)
