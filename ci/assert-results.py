@@ -36,7 +36,7 @@ def consistency_problems(runtime, summary, results, env):
         problems.append("no ENV line")
     elif env.get("detected") != runtime:
         problems.append(f"ENV detected {env.get('detected')}, expected {runtime}")
-    if len(results) != 5:
+    if summary and len(results) != 5:
         problems.append(f"{len(results)} RESULT lines, expected 5")
     if summary:
         total = sum(int(summary.get(key, -1)) for key in ("kept", "collected", "replaced", "invalid"))
@@ -61,8 +61,18 @@ def read_cell(results_dir, runtime, app, code):
         "stress": stress[-1] if stress else None,
         "deterministicNativeFailures": native_failures(deterministic),
         "stressNativeFailures": native_failures(stress_folder),
-        "consistencyProblems": consistency_problems(runtime, summary, results, env) if summary else [],
+        "crashMessage": crash_message(deterministic),
+        "consistencyProblems": consistency_problems(runtime, summary, results, env),
     }
+
+
+def crash_message(folder):
+    path = f"{folder}/crash.txt"
+    if not os.path.exists(path):
+        return ""
+    text = open(path, errors="replace").read()
+    match = re.search(r"Abort message: '?(.*)", text) or re.search(r"F\s.*?\.cc:\d+\]\s*(.*)", text)
+    return match.group(1).strip("'")[:160] if match else ""
 
 
 def binding_failures(results_dir, runtime):
@@ -98,7 +108,7 @@ def main():
     for app in APPS:
         for code in CODES:
             cell = read_cell(arguments.results, arguments.runtime, app, code)
-            observed = cell["summary"]["verdict"] if cell["summary"] else "NO SUMMARY"
+            observed = cell["summary"]["verdict"] if cell["summary"] else "CRASH_BEFORE_RESULT" if cell["results"] == [] else "NO SUMMARY"
             match = observed == expected[app][code]
             if not match:
                 mismatches.append(f"{app}/{code}: expected {expected[app][code]}, observed {observed}")
@@ -116,7 +126,7 @@ def main():
         summary, stress = cell["summary"] or {}, cell["stress"] or {}
         rows.append(f"| {cell['runtime']} | {cell['app']} | {cell['code']} | {cell['expected']} | {cell['observed']} | "
                     f"{summary.get('kept', '?')} / {summary.get('collected', '?')} / {summary.get('replaced', '?')} | {'yes' if cell['match'] else 'NO'} | "
-                    f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {', '.join(cell['stressNativeFailures'] + cell['deterministicNativeFailures']) or 'no'} |")
+                    f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {', '.join(cell['stressNativeFailures'] + cell['deterministicNativeFailures'] + ([cell['crashMessage']] if cell['crashMessage'] else [])) or 'no'} |")
     table = "\n".join(rows)
     print(table)
 

@@ -48,11 +48,28 @@ public class MainActivity : Activity
         RunOnUiThread(FinishAndRemoveTask);
     }
 
+    // Mono.Runtime is trimmed out of the .NET 10 Mono CoreLib, so the loaded native runtime library is the reliable signal
+    static string DetectRuntime()
+    {
+        if (!RuntimeFeature.IsDynamicCodeSupported)
+        {
+            return "nativeaot";
+        }
+
+        var maps = File.ReadAllText("/proc/self/maps");
+        if (maps.Contains("libmonosgen-2.0.so", StringComparison.Ordinal))
+        {
+            return "mono";
+        }
+
+        return maps.Contains("libcoreclr.so", StringComparison.Ordinal) ? "coreclr" : "unknown";
+    }
+
     static void LogEnvironment(string app, string runtime)
     {
         var assembly = typeof(IListenableFuture).Assembly;
         var guavaAssembly = typeof(Google.Common.Collect.ImmutableList).Assembly;
-        var detected = !RuntimeFeature.IsDynamicCodeSupported ? "nativeaot" : Type.GetType("Mono.Runtime") is not null ? "mono" : "coreclr";
+        var detected = DetectRuntime();
 
         Log.Line("ENV", ("app", app), ("runtime", runtime), ("detected", detected), ("framework", System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription),
             ("api", (int)Build.VERSION.SdkInt), ("abi", Build.SupportedAbis?.FirstOrDefault() ?? ""),
