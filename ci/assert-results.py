@@ -12,11 +12,19 @@ def fields(line):
     return {key: value.strip('"') for key, value in re.findall(r'(\w+)=("[^"]*"|\S+)', line)}
 
 
-def lines_starting_with(path, key):
+def lines_starting_with(path, key, app=None, code=None):
     if not os.path.exists(path):
         return []
     with open(path, errors="replace") as file:
-        return [fields(line) for line in file if re.search(rf"\s{key}\s", line)]
+        parsed = [fields(line) for line in file if re.search(rf"\s{key}\s", line)]
+    parsed = [line for line in parsed if app is None or line.get("app") == app]
+    if code is not None and key in ("RESULT", "SUMMARY"):
+        parsed = [line for line in parsed if line.get("code") == code]
+    return parsed
+
+
+def error_texts(lines):
+    return [f"ERROR {line.get('inner', line.get('exception', ''))}: {line.get('message', '')}" for line in lines]
 
 
 def native_failures(folder):
@@ -47,11 +55,14 @@ def consistency_problems(runtime, summary, results, env):
 
 def read_cell(results_dir, runtime, app, code):
     deterministic = f"{results_dir}/runs/{app}-deterministic-{code}"
-    summaries = lines_starting_with(f"{deterministic}/repro.txt", "SUMMARY")
-    results = lines_starting_with(f"{deterministic}/repro.txt", "RESULT")
-    envs = lines_starting_with(f"{deterministic}/repro.txt", "ENV")
+    summaries = lines_starting_with(f"{deterministic}/repro.txt", "SUMMARY", app, code)
+    results = lines_starting_with(f"{deterministic}/repro.txt", "RESULT", app, code)
+    envs = lines_starting_with(f"{deterministic}/repro.txt", "ENV", app)
     stress_folder = f"{results_dir}/runs/{app}-stress-{code}"
-    stress = lines_starting_with(f"{stress_folder}/repro.txt", "STRESS")
+    stress = lines_starting_with(f"{stress_folder}/repro.txt", "STRESS", app, code)
+    errors = error_texts(lines_starting_with(f"{deterministic}/repro.txt", "ERROR", app) + lines_starting_with(f"{stress_folder}/repro.txt", "ERROR", app))
+    wait_path = f"{deterministic}/wait.txt"
+    timed_out = os.path.exists(wait_path) and "Timed out" in open(wait_path, errors="replace").read()
     summary = summaries[-1] if summaries else None
     env = envs[0] if envs else None
     return {
@@ -62,8 +73,20 @@ def read_cell(results_dir, runtime, app, code):
         "deterministicNativeFailures": native_failures(deterministic),
         "stressNativeFailures": native_failures(stress_folder),
         "crashMessage": crash_message(deterministic),
+        "errors": errors,
+        "timedOut": timed_out,
         "consistencyProblems": consistency_problems(runtime, summary, results, env),
     }
+
+
+def observed_label(cell):
+    if cell["summary"]:
+        return cell["summary"]["verdict"]
+    if cell["errors"]:
+        return "ERROR"
+    if not cell["results"]:
+        return "TIMEOUT_BEFORE_RESULT" if cell["timedOut"] else "CRASH_BEFORE_RESULT"
+    return "NO SUMMARY"
 
 
 def crash_message(folder):
@@ -99,6 +122,7 @@ def main():
     parser.add_argument("--runtime", required=True)
     parser.add_argument("--expected", required=True)
     parser.add_argument("--results", required=True)
+    parser.add_argument("--output")
     arguments = parser.parse_args()
 
     with open(arguments.expected) as file:
@@ -108,7 +132,7 @@ def main():
     for app in APPS:
         for code in CODES:
             cell = read_cell(arguments.results, arguments.runtime, app, code)
-            observed = cell["summary"]["verdict"] if cell["summary"] else "CRASH_BEFORE_RESULT" if cell["results"] == [] else "NO SUMMARY"
+            observed = observed_label(cell)
             match = observed == expected[app][code]
             if not match:
                 mismatches.append(f"{app}/{code}: expected {expected[app][code]}, observed {observed}")
@@ -118,7 +142,7 @@ def main():
 
     failures = binding_failures(arguments.results, arguments.runtime)
 
-    with open(f"{arguments.results}/results.json", "w") as file:
+    with open(arguments.output or f"{arguments.results}/results.json", "w") as file:
         json.dump({"runtime": arguments.runtime, "cells": cells, "mismatches": mismatches, "bindingFailures": failures}, file, indent=2)
 
     rows = ["| Runtime | App | Code | Predicted | Observed | kept / collected / replaced | Match | Stress calls | NPE (Runnable) | Crash |", "|---|---|---|---|---|---|---|---|---|---|"]
@@ -126,7 +150,7 @@ def main():
         summary, stress = cell["summary"] or {}, cell["stress"] or {}
         rows.append(f"| {cell['runtime']} | {cell['app']} | {cell['code']} | {cell['expected']} | {cell['observed']} | "
                     f"{summary.get('kept', '?')} / {summary.get('collected', '?')} / {summary.get('replaced', '?')} | {'yes' if cell['match'] else 'NO'} | "
-                    f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {', '.join(cell['stressNativeFailures'] + cell['deterministicNativeFailures'] + ([cell['crashMessage']] if cell['crashMessage'] else [])) or 'no'} |")
+                    f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {', '.join(cell['stressNativeFailures'] + cell['deterministicNativeFailures'] + ([cell['crashMessage']] if cell['crashMessage'] else []) + cell['errors']) or 'no'} |")
     table = "\n".join(rows)
     print(table)
 

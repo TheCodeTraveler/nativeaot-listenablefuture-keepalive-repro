@@ -41,14 +41,16 @@ public class MainActivity : Activity
         }
         catch (Exception e)
         {
-            Log.Line("ERROR", ("app", app), ("runtime", runtime), ("exception", e.GetType().FullName), ("message", e.Message));
+            var inner = e.GetBaseException();
+            Log.Line("ERROR", ("app", app), ("runtime", runtime), ("exception", e.GetType().FullName), ("inner", inner.GetType().FullName), ("message", inner.Message));
+            Android.Util.Log.Error(Log.Tag, e.ToString());
         }
 
-        Log.Line("DONE", ("app", app), ("runtime", runtime));
+        Log.Line("DONE", ("app", app), ("runtime", runtime), ("scenario", scenario), ("code", useKeepAliveWorkaround ? "keepalive" : "plain"));
         RunOnUiThread(FinishAndRemoveTask);
     }
 
-    // Mono.Runtime is trimmed out of the .NET 10 Mono CoreLib, so the loaded native runtime library is the reliable signal
+    // Mono.Runtime does not exist in the .NET 10 Mono CoreLib, so the loaded native runtime library is the reliable signal
     static string DetectRuntime()
     {
         if (!RuntimeFeature.IsDynamicCodeSupported)

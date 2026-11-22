@@ -11,7 +11,7 @@ static class Log
         var parts = new List<string>(fields.Length + 1) { key };
         foreach (var (name, value) in fields)
         {
-            var text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "";
+            var text = (Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "").Replace('"', '\'').ReplaceLineEndings(" ");
             parts.Add(text.Contains(' ') ? $"{name}=\"{text}\"" : $"{name}={text}");
         }
 

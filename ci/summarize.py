@@ -28,7 +28,7 @@ for cell in cells:
     summary, stress = cell.get("summary") or {}, cell.get("stress") or {}
     out.append(f"| {cell['runtime']} | {cell['app']} | {cell['code']} | {cell['expected']} | {cell['observed']} | "
                f"{summary.get('kept', '?')} / {summary.get('collected', '?')} / {summary.get('replaced', '?')} | {'yes' if cell['match'] else 'NO'} | "
-               f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {', '.join(cell.get('stressNativeFailures', []) + cell.get('deterministicNativeFailures', [])) or 'no'} |")
+               f"{stress.get('calls', '?')} | {stress.get('npeRunnable', '?')} | {', '.join(cell.get('stressNativeFailures', []) + cell.get('deterministicNativeFailures', []) + ([cell['crashMessage']] if cell.get('crashMessage') else []) + cell.get('errors', [])) or 'no'} |")
 
 out.append("\n## Binding proof\n")
 out.append("| Runtime | App | Resolved | Guava | KeepAlive calls in AddListener (per copy) | Identical to nupkg | Compiler input | _PostTrimmingPipeline | illink AddKeepAlivesStep | Keep-alive step ran |")

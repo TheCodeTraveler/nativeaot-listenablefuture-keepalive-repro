@@ -13,8 +13,6 @@ static unsafe class GuavaFutures
     static readonly nint moreExecutorsClass = JNIEnv.FindClass("com/google/common/util/concurrent/MoreExecutors");
     static readonly nint directExecutorMethod = JNIEnv.GetStaticMethodID(moreExecutorsClass, "directExecutor", "()Ljava/util/concurrent/Executor;");
 
-    public static IExecutor DirectExecutor { get; } = CreateDirectExecutor();
-
     // immediateFuture(null) returns a singleton that Java keeps alive forever, so a fresh value is what makes every future collectible
     public static IListenableFuture ImmediateFuture(Java.Lang.Object value)
     {
@@ -30,7 +28,7 @@ static unsafe class GuavaFutures
             ?? throw new InvalidOperationException("Futures.immediateFuture returned null.");
     }
 
-    static IExecutor CreateDirectExecutor()
+    public static IExecutor CreateDirectExecutor()
     {
         var handle = JNIEnv.CallStaticObjectMethod(moreExecutorsClass, directExecutorMethod);
         return Java.Lang.Object.GetObject<IExecutor>(handle, JniHandleOwnership.TransferLocalRef)

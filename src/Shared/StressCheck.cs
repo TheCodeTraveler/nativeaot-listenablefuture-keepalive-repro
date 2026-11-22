@@ -22,7 +22,7 @@ static class StressCheck
         collector.Start();
 
         var nextProgress = DateTime.UtcNow.AddSeconds(10);
-        var executor = GuavaFutures.DirectExecutor;
+        var executor = GuavaFutures.CreateDirectExecutor();
         while (DateTime.UtcNow < deadline)
         {
             try
